@@ -1,79 +1,30 @@
-#![allow(unused_imports)]
-#![allow(clippy::single_component_path_imports)]
-
-use core::ffi;
-
-use std::ffi::c_void;
-use std::fs;
-use std::io::{Read, Write};
-use std::net::{TcpListener, TcpStream};
-use std::path::PathBuf;
-use std::ptr::{null, null_mut};
-use std::sync::{Condvar, Mutex};
-use std::{cell::RefCell, env, sync::atomic::*, sync::Arc, thread, time::*};
+use std::{
+    ffi::c_void,
+    ptr::null_mut,
+    {cell::RefCell, time::*},
+};
 
 use anyhow::{bail, Result};
 
-use esp_idf_hal::ledc::config::TimerConfig;
-use esp_idf_hal::ledc::{LedcDriver, LedcTimerDriver};
+use esp_idf_hal::ledc::{
+    config::TimerConfig,
+    {LedcDriver, LedcTimerDriver},
+};
 use log::*;
 
-use url;
+use embedded_svc::{ipv4, wifi::*};
 
-use smol;
+use esp_idf_svc::{eventloop::*, ping, wifi::*};
 
-use embedded_hal::adc::OneShot;
-use embedded_hal::blocking::delay::DelayMs;
-use embedded_hal::digital::v2::OutputPin;
-
-use embedded_svc::eth;
-use embedded_svc::io;
-use embedded_svc::ipv4;
-use embedded_svc::mqtt::client::{Client, Connection, MessageImpl, Publish, QoS};
-use embedded_svc::ping::Ping;
-use embedded_svc::sys_time::SystemTime;
-use embedded_svc::timer::TimerService;
-use embedded_svc::timer::*;
-use embedded_svc::utils::mqtt::client::ConnState;
-use embedded_svc::wifi::*;
-
-use esp_idf_svc::eventloop::*;
-use esp_idf_svc::httpd as idf;
-use esp_idf_svc::httpd::ServerRegistry;
-use esp_idf_svc::mqtt::client::*;
-use esp_idf_svc::netif::*;
-use esp_idf_svc::nvs::*;
-use esp_idf_svc::ping;
-use esp_idf_svc::sntp;
-use esp_idf_svc::systime::EspSystemTime;
-use esp_idf_svc::timer::*;
-use esp_idf_svc::wifi::*;
-
-use esp_idf_hal::adc;
-use esp_idf_hal::delay::{self, Delay};
-use esp_idf_hal::gpio::{self, PinDriver};
-use esp_idf_hal::i2c;
-use esp_idf_hal::peripheral;
-use esp_idf_hal::prelude::*;
-use esp_idf_hal::spi;
+use esp_idf_hal::{delay::Delay, peripheral, prelude::*};
 
 use esp_idf_sys::{
-    self, esp_lcd_new_rgb_panel, esp_lcd_panel_del, esp_lcd_panel_disp_on_off,
-    esp_lcd_panel_draw_bitmap, esp_lcd_panel_handle_t, esp_lcd_panel_init, esp_lcd_panel_reset,
-    esp_lcd_panel_t, esp_lcd_rgb_panel_config_t, esp_lcd_rgb_panel_config_t__bindgen_ty_1,
-    esp_lcd_rgb_panel_get_frame_buffer, esp_lcd_rgb_timing_t, esp_lcd_rgb_timing_t__bindgen_ty_1,
-    esp_psram_init, soc_periph_lcd_clk_src_t_LCD_CLK_SRC_DEFAULT,
+    self, esp_lcd_new_rgb_panel, esp_lcd_panel_del, esp_lcd_panel_draw_bitmap,
+    esp_lcd_panel_handle_t, esp_lcd_panel_init, esp_lcd_panel_reset, esp_lcd_rgb_panel_config_t,
+    esp_lcd_rgb_panel_config_t__bindgen_ty_1, esp_lcd_rgb_panel_get_frame_buffer,
+    esp_lcd_rgb_timing_t, esp_lcd_rgb_timing_t__bindgen_ty_1,
     soc_periph_lcd_clk_src_t_LCD_CLK_SRC_PLL160M, ESP_OK,
 };
-use esp_idf_sys::{esp, EspError};
-
-use display_interface_spi::SPIInterfaceNoCS;
-
-use embedded_graphics::mono_font::{ascii::FONT_10X20, MonoTextStyle};
-use embedded_graphics::pixelcolor::*;
-use embedded_graphics::prelude::*;
-use embedded_graphics::primitives::*;
-use embedded_graphics::text::*;
 
 const SSID: &str = include_str!("../wifi_name.txt");
 const PASS: &str = include_str!("../wifi_pass.txt");
@@ -250,7 +201,7 @@ impl EventLoopMessage {
 }
 
 impl EspTypedEventSource for EventLoopMessage {
-    fn source() -> *const ffi::c_char {
+    fn source() -> *const std::ffi::c_char {
         b"DEMO-SERVICE\0".as_ptr() as *const _
     }
 }
@@ -343,10 +294,6 @@ fn wifi(
     modem: impl peripheral::Peripheral<P = esp_idf_hal::modem::Modem> + 'static,
     sysloop: EspSystemEventLoop,
 ) -> Result<Box<EspWifi<'static>>> {
-    use std::net::Ipv4Addr;
-
-    use esp_idf_svc::handle::RawHandle;
-
     let mut esp_wifi = EspWifi::new(modem, sysloop.clone(), None)?;
 
     let mut wifi = BlockingWifi::wrap(&mut esp_wifi, sysloop)?;
