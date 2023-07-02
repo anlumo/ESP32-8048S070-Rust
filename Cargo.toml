@@ -1,5 +1,5 @@
 [package]
-name = "ESP32-8048S070"
+name = "esp32_8048s070"
 version = "0.0.1"
 authors = ["anlumo"]
 edition = "2021"
